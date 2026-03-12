@@ -49,17 +49,16 @@ fluidPage(
     mainPanel(
       h4("1. The Network Architecture", align="center"),
       plotOutput("app1_network_plot", height = "250px"),
+      
       hr(),
-      fluidRow(
-        column(6, 
-               h4("2. The Math", align="center"),
-               uiOutput("app1_math_text")
-        ),
-        column(6, 
-               h4("3. The Sigmoid Curve", align="center"),
-               plotOutput("app1_sigmoid_plot", height = "250px")
-        )
-      )
+      
+      h4("2. The Math", align="center"),
+      uiOutput("app1_math_text"),
+      
+      hr(),
+      
+      h4("3. The Sigmoid Curve", align="center"),
+      plotOutput("app1_sigmoid_plot", height = "250px")
     )
   )
 )
@@ -152,7 +151,7 @@ output$app1_network_plot <- renderPlot({
                size=5, fontface="bold", color="darkblue", linewidth=0, fill="white") +
     geom_point(data = node_df, aes(x=x, y=y, color=type), size=35) +
     geom_point(data = node_df, aes(x=x, y=y), size=28, color="white") +
-    geom_text(data = node_df, aes(x=x, y=y, label=label), size=6, fontface="bold") +
+    geom_text(data = node_df, aes(x=x, y=y, label=label), size=4, fontface="bold") +
     scale_color_manual(values = c("input" = "gray40", "output" = "darkred")) +
     scale_x_continuous(limits = c(-0.2, 1.2)) +
     scale_y_continuous(limits = c(0, 1)) +
@@ -172,8 +171,8 @@ output$app1_math_text <- renderUI({
   HTML(paste0(
     "<div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; text-align: left; font-size: 15px;'>",
     "<strong>1. Calculate Linear Sum (Z):</strong> <br>",
-    "<span style='color: #666;'><em>Formula: Z = (β₁ × X₁) + (β₂ × X₂) + β₀</em></span><br>",
-    "Z = (1.5 × ", x1, ") + (-2.0 × ", x2, ") + 0.5 = <strong>", round(z, 2), "</strong><br><br>",
+    "<span style='color: #666;'><em>Formula: Z = β₀ + (β₁ × X₁) + (β₂ × X₂)</em></span><br>",
+    "Z = 0.5 + (1.5 × ", x1, ") + (-2.0 × ", x2, ") = <strong>", round(z, 2), "</strong><br><br>",
     "<strong>2. Apply Sigmoid Transformation σ(Z):</strong> <br>",
     "<span style='color: #666;'><em>Formula: σ(Z) = e<sup>Z</sup> / (1 + e<sup>Z</sup>)</em></span><br>",
     "Probability = σ(", round(z, 2), ") = <strong style='color: darkred; font-size: 20px;'>", round(p, 3), "</strong>",
@@ -255,7 +254,7 @@ output$network_graph <- renderPlot({
   # Dynamic sizing algorithm to prevent overlap
   base_size <- if(nodes >= 7) 12 else if(nodes >= 5) 16 else 22
   inner_size <- base_size - 5
-  text_size <- if(nodes >= 7) 4 else if(nodes >= 5) 6 else 8
+  text_size <- if(nodes >= 7) 2 else if(nodes >= 5) 4 else 5
   
   node_df <- data.frame(x = numeric(), y = numeric(), layer = numeric(), label = character(), type = character())
   edge_df <- data.frame(x = numeric(), y = numeric(), xend = numeric(), yend = numeric())
