@@ -7,7 +7,7 @@ This repository contains interactive Quarto documents (powered by R and Shiny) d
 
 ## Contents
 * **[`p-values`](https://ccb.connect.hms.harvard.edu/AISC-610-p-values/)**: Demystifying the $p$-value. Explores the inverse probability fallacy, the illusion of certainty via sample size, and confounding by indication.
-* **[`neural-nets`](https://ccb.connect.hms.harvard.edu/AISC-610-neural-nets/)**: From Logistic Regression to Deep Learning. A visual breakdown of how classical logistic regression scales into deep neural networks to capture complex, non-linear biological reality.
+* **[`neural-nets`](https://ccb.connect.hms.harvard.edu/AISC-610-neural-nets/)**: From Logistic Regression to Deep Learning. A visual breakdown of how classical logistic regression scales into deep neural networks to capture complex, non-linear patterns in data.
 
 ## Usage
 These modules are designed to be deployed as interactive web applications via Posit Connect for student access. 
