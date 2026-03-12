@@ -304,7 +304,7 @@ output$network_graph <- renderPlot({
     scale_color_manual(values = c("input" = "gray40", "compute" = "darkorange", "output" = "darkred")) +
     scale_x_continuous(expand = expansion(mult = 0.25)) +
     scale_y_continuous(limits = c(0, 1)) +
-    labs(subtitle = "Information Flow ➔   |   (σ) indicates a node summing inputs and applying the Sigmoid transformation.") +
+    labs(subtitle = "(σ) indicates applying the Sigmoid transformation.") +
     theme_void() +
     theme(legend.position = "none",
           plot.subtitle = element_text(hjust = 0.5, face = "italic", color = "gray40", size = 14))
