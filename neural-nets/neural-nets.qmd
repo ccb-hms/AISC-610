@@ -1,0 +1,352 @@
+---
+title: "From Logistic Regression to Deep Learning"
+subtitle: "AISC 610: Computationally Enabled Medicine"
+author: "Anthony Christidis"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 2
+    page-layout: article
+server: shiny
+---
+
+```{r}
+#| context: setup
+#| include: false
+
+# Load necessary libraries
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(neuralnet) 
+library(bslib)
+library(grid) 
+
+theme_set(theme_minimal(base_size = 14))
+```
+
+## 1. Logistic Regression IS a 1 Layer Neural Network
+
+In our recent lecture we covered the logistic regression model. We discussed how it takes patient variables as inputs, multiplies them by certain weights, sums them up, and pushes them through a transformation function called the sigmoid to output a probability between 0 and 1. 
+
+While we introduced this as a classical statistical model, visually and mathematically this architecture is exactly a 1 layer neural network. It has 0 hidden layers. The inputs feed directly into the final output node where the sigmoid transformation occurs.
+
+Use the interactive tool below to look inside a single node. You can change the patient inputs. Watch how the values flow through the network graph, calculate the linear sum, and map onto the sigmoid curve to get the final disease probability. 
+
+```{r}
+#| echo: false
+fluidPage(
+  sidebarLayout(
+    sidebarPanel(
+      h4("Patient Inputs"),
+      sliderInput("app1_x1", "Biomarker 1 (X₁):", min = -3, max = 3, value = 1.5, step = 0.1),
+      sliderInput("app1_x2", "Biomarker 2 (X₂):", min = -3, max = 3, value = -1.0, step = 0.1),
+      hr(),
+      p("Every node in a neural network does this exact same math. It takes inputs, applies weights (β), adds a baseline bias (β₀), and pushes the sum through a curve.")
+    ),
+    mainPanel(
+      h4("1. The Network Architecture", align="center"),
+      plotOutput("app1_network_plot", height = "250px"),
+      hr(),
+      fluidRow(
+        column(6, 
+               h4("2. The Math", align="center"),
+               uiOutput("app1_math_text")
+        ),
+        column(6, 
+               h4("3. The Sigmoid Curve", align="center"),
+               plotOutput("app1_sigmoid_plot", height = "250px")
+        )
+      )
+    )
+  )
+)
+```
+
+Every massive AI system in medicine today is essentially built by chaining thousands or millions of these exact logistic regression nodes together. 
+
+## 2. The Limitation of a Single Node
+
+If logistic regression is a neural network, why do we need deep networks with hidden layers? 
+
+The fundamental limitation of a single computational node is that it can only draw a straight line to separate sick patients from healthy patients. Biology is rarely linear. 
+
+Imagine a disease driven by a complex interaction between age and a specific hormone. High hormone levels might be dangerous for young patients but protective for older patients. This creates interlocking crescent shaped patient subpopulations. A straight line cannot untangle them. 
+
+Use the interactive app below to see this in action.
+
+*   **Start at 0 Hidden Layers:** Look at the network graph. Two inputs connect directly to the final node which applies the sigmoid function. Now look at the boundary plot. It draws a straight line completely cutting through both subpopulations.
+*   **Add 1 Hidden Layer but only 1 Node:** Notice what happens. Even with a hidden layer a single node still only has the mathematical capacity to draw a straight line.
+*   **Increase the Nodes:** Watch the network graph grow. By combining multiple logistic nodes together the network learns to bend its boundary to perfectly isolate the complex biological shapes.
+
+```{r}
+#| echo: false
+fluidPage(
+  sidebarLayout(
+    sidebarPanel(
+      h4("Network Architecture Controls"),
+      sliderInput("layers", "Number of Hidden Layers:", 
+                  min = 0, max = 2, value = 0, step = 1),
+      helpText("0 Hidden Layers = Standard Logistic Regression."),
+      
+      uiOutput("nodes_ui"),
+      
+      hr(),
+      uiOutput("nn_text")
+    ),
+    
+    mainPanel(
+      h4("Network Diagram", align="center"),
+      plotOutput("network_graph", height = "350px"),
+      hr(),
+      h4("Decision Boundary", align="center"),
+      plotOutput("nn_plot", height = "500px")
+    )
+  )
+)
+```
+
+## 3. Scaling Up: Modern Deep Learning in Medicine
+
+In the interactive example above you just built a Multi Layer Perceptron. By adding just one or two hidden layers with a few nodes the model learned to bend its decision boundary to fit the biology. 
+
+Modern Deep Learning is simply this exact concept scaled to an extreme with specialized architectures designed for specific types of medical data.
+
+*   **Convolutional Neural Networks:** Used heavily in medical imaging like radiology and pathology. Instead of taking simple numbers as inputs these networks take the raw pixels of a scan. The hidden layers act as mathematical filters to look for edges, shapes, and eventually complex features like tumors.
+*   **Transformers and Large Language Models:** The architecture behind modern clinical summarization models. These networks process sequences of text like clinical notes. Their hidden layers use attention mechanisms allowing the network to weigh the importance of a specific word based on surrounding words granting it deep clinical context.
+
+Whether it is predicting mortality from a spreadsheet or finding cancer in a scan or writing a discharge summary the foundational math traces back to the simple node we drew in class. It is always inputs multiplied by weights and passed through a transformation.
+
+```{r}
+#| context: server
+#| echo: false
+
+# ==========================================
+# SERVER LOGIC FOR APP 1: INSIDE THE NODE
+# ==========================================
+
+output$app1_network_plot <- renderPlot({
+  x1 <- input$app1_x1
+  x2 <- input$app1_x2
+  w1 <- 1.5
+  w2 <- -2.0
+  b <- 0.5
+  
+  node_df <- data.frame(
+    x = c(0, 0, 1),
+    y = c(0.8, 0.2, 0.5),
+    label = c(paste0("X₁\n(", x1, ")"), paste0("X₂\n(", x2, ")"), "Node Y\nσ(Z)"),
+    type = c("input", "input", "output")
+  )
+  
+  edge_df <- data.frame(
+    x = c(0, 0, 0.8), y = c(0.8, 0.2, 0.85), xend = c(1, 1, 1), yend = c(0.5, 0.5, 0.6),
+    label = c(paste0("Weight β₁ = ", w1), paste0("Weight β₂ = ", w2), paste0("Bias β₀ = ", b))
+  )
+  
+  ggplot() +
+    geom_segment(data = edge_df, aes(x=x, y=y, xend=xend, yend=yend), color="gray50", linewidth=0.5) +
+    geom_label(data = edge_df, aes(x=(x+xend)/2, y=(y+yend)/2, label=label), 
+               size=5, fontface="bold", color="darkblue", linewidth=0, fill="white") +
+    geom_point(data = node_df, aes(x=x, y=y, color=type), size=35) +
+    geom_point(data = node_df, aes(x=x, y=y), size=28, color="white") +
+    geom_text(data = node_df, aes(x=x, y=y, label=label), size=6, fontface="bold") +
+    scale_color_manual(values = c("input" = "gray40", "output" = "darkred")) +
+    scale_x_continuous(limits = c(-0.2, 1.2)) +
+    scale_y_continuous(limits = c(0, 1)) +
+    theme_void() +
+    theme(legend.position = "none")
+})
+
+output$app1_math_text <- renderUI({
+  x1 <- input$app1_x1
+  x2 <- input$app1_x2
+  w1 <- 1.5
+  w2 <- -2.0
+  b <- 0.5
+  z <- (w1 * x1) + (w2 * x2) + b
+  p <- exp(z) / (1 + exp(z))
+  
+  HTML(paste0(
+    "<div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; text-align: left; font-size: 15px;'>",
+    "<strong>1. Calculate Linear Sum (Z):</strong> <br>",
+    "<span style='color: #666;'><em>Formula: Z = (β₁ × X₁) + (β₂ × X₂) + β₀</em></span><br>",
+    "Z = (1.5 × ", x1, ") + (-2.0 × ", x2, ") + 0.5 = <strong>", round(z, 2), "</strong><br><br>",
+    "<strong>2. Apply Sigmoid Transformation σ(Z):</strong> <br>",
+    "<span style='color: #666;'><em>Formula: σ(Z) = e<sup>Z</sup> / (1 + e<sup>Z</sup>)</em></span><br>",
+    "Probability = σ(", round(z, 2), ") = <strong style='color: darkred; font-size: 20px;'>", round(p, 3), "</strong>",
+    "</div>"
+  ))
+})
+
+output$app1_sigmoid_plot <- renderPlot({
+  x1 <- input$app1_x1
+  x2 <- input$app1_x2
+  z_val <- (1.5 * x1) + (-2.0 * x2) + 0.5
+  p_val <- exp(z_val) / (1 + exp(z_val))
+  
+  z_seq <- seq(-6, 6, length.out = 100)
+  p_seq <- exp(z_seq) / (1 + exp(z_seq))
+  df_sig <- data.frame(z = z_seq, p = p_seq)
+  
+  ggplot(df_sig, aes(x = z, y = p)) +
+    geom_line(linewidth = 1.5, color = "steelblue") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+    geom_hline(yintercept = 0.5, linetype = "dashed", color = "gray50") +
+    annotate("point", x = z_val, y = p_val, color = "darkred", size = 6) +
+    annotate("segment", x = z_val, y = 0, xend = z_val, yend = p_val, color = "darkred", linetype = "dotted", linewidth=0.5) +
+    annotate("segment", x = -6, y = p_val, xend = z_val, yend = p_val, color = "darkred", linetype = "dotted", linewidth=0.5) +
+    scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
+    scale_x_continuous(limits = c(-6, 6)) +
+    labs(x = "Linear Sum (Z)", y = "Disease Prob. (0 to 1)") +
+    theme(text = element_text(size = 16))
+})
+
+# ==========================================
+# SERVER LOGIC FOR APP 2: NEURAL NET BUILDER
+# ==========================================
+
+nn_data <- reactive({
+  set.seed(123)
+  n <- 150
+  t1 <- runif(n, 0, pi)
+  x1 <- cos(t1) - 0.5 + rnorm(n, 0, 0.15)
+  y1 <- sin(t1) + rnorm(n, 0, 0.15)
+  t2 <- runif(n, 0, pi)
+  x2 <- 1 - cos(t2) - 0.5 + rnorm(n, 0, 0.15)
+  y2 <- 0.5 - sin(t2) + rnorm(n, 0, 0.15)
+  df <- data.frame(Biomarker1 = c(x1, x2), Biomarker2 = c(y1, y2), Disease = c(rep(0, n), rep(1, n)))
+  return(df)
+})
+
+output$nodes_ui <- renderUI({
+  if (input$layers > 0) {
+    sliderInput("nodes", "Nodes per Hidden Layer:", min = 1, max = 8, value = 4, step = 1)
+  }
+})
+
+output$nn_text <- renderUI({
+  if (input$layers == 0) {
+    HTML("<div style='background-color: #fee; padding: 10px; border-radius: 5px;'>
+         <strong>Current: Logistic Regression (0 Hidden Layers)</strong><br>
+         <em>Architecture:</em> Inputs connect directly to the 1 output node.<br>
+         <em>Result:</em> It can only draw a straight line completely failing to separate the subpopulations.
+         </div>")
+  } else if (input$nodes == 1) {
+    HTML("<div style='background-color: #fff3cd; padding: 10px; border-radius: 5px;'>
+         <strong>Current: Single Node Hidden Layer</strong><br>
+         <em>Result:</em> Even with an extra layer a single node still only has the mathematical capacity to draw a straight line. You must combine MULTIPLE nodes to capture curves.
+         </div>")
+  } else {
+    HTML(paste0("<div style='background-color: #efe; padding: 10px; border-radius: 5px;'>
+         <strong>Current: Deep Neural Network</strong><br>
+         <em>Architecture:</em> ", input$layers, " Hidden Layers, ", input$nodes, " Nodes.<br>
+         <em>Result:</em> By combining multiple logistic nodes the network learns complex boundaries.
+         </div>"))
+  }
+})
+
+output$network_graph <- renderPlot({
+  layers <- input$layers
+  nodes <- if(is.null(input$nodes)) 1 else input$nodes
+  
+  # Dynamic sizing algorithm to prevent overlap
+  base_size <- if(nodes >= 7) 12 else if(nodes >= 5) 16 else 22
+  inner_size <- base_size - 5
+  text_size <- if(nodes >= 7) 4 else if(nodes >= 5) 6 else 8
+  
+  node_df <- data.frame(x = numeric(), y = numeric(), layer = numeric(), label = character(), type = character())
+  edge_df <- data.frame(x = numeric(), y = numeric(), xend = numeric(), yend = numeric())
+  
+  in_y <- c(0.33, 0.66)
+  node_df <- rbind(node_df, data.frame(x = 0, y = in_y[1], layer = 0, label = "X1", type = "input"))
+  node_df <- rbind(node_df, data.frame(x = 0, y = in_y[2], layer = 0, label = "X2", type = "input"))
+  
+  prev_y <- in_y
+  prev_x <- 0
+  
+  if (layers > 0) {
+    for (l in 1:layers) {
+      curr_x <- l
+      if (nodes == 1) {
+        curr_y <- 0.5
+      } else {
+        spacing <- 1 / (nodes + 1)
+        curr_y <- seq(spacing, 1 - spacing, length.out = nodes)
+      }
+      for (i in 1:nodes) {
+        node_df <- rbind(node_df, data.frame(x = curr_x, y = curr_y[i], layer = l, label = "σ", type = "compute"))
+      }
+      for (py in prev_y) {
+        for (cy in curr_y) {
+          edge_df <- rbind(edge_df, data.frame(x = prev_x, y = py, xend = curr_x, yend = cy))
+        }
+      }
+      prev_y <- curr_y
+      prev_x <- curr_x
+    }
+  }
+  
+  out_x <- prev_x + 1
+  out_y <- 0.5
+  node_df <- rbind(node_df, data.frame(x = out_x, y = out_y, layer = out_x, label = "Y", type = "output"))
+  
+  for (py in prev_y) {
+    edge_df <- rbind(edge_df, data.frame(x = prev_x, y = py, xend = out_x, yend = out_y))
+  }
+  
+  ggplot() +
+    geom_segment(data = edge_df, aes(x=x, y=y, xend=xend, yend=yend), color="gray70", linewidth=0.5) +
+    geom_point(data = node_df, aes(x=x, y=y, color=type), size=base_size) +
+    geom_point(data = node_df, aes(x=x, y=y), size=inner_size, color="white") +
+    geom_text(data = node_df, aes(x=x, y=y, label=label), size=text_size, fontface="bold") +
+    scale_color_manual(values = c("input" = "gray40", "compute" = "darkorange", "output" = "darkred")) +
+    scale_x_continuous(expand = expansion(mult = 0.25)) +
+    scale_y_continuous(limits = c(0, 1)) +
+    labs(subtitle = "Information Flow ➔   |   (σ) indicates a node summing inputs and applying the Sigmoid transformation.") +
+    theme_void() +
+    theme(legend.position = "none",
+          plot.subtitle = element_text(hjust = 0.5, face = "italic", color = "gray40", size = 14))
+})
+
+output$nn_plot <- renderPlot({
+  df <- nn_data()
+  grid_points <- seq(-2, 2.5, length.out = 80)
+  grid <- expand.grid(Biomarker1 = grid_points, Biomarker2 = grid_points)
+  
+  if (input$layers == 0) {
+    model <- glm(Disease ~ Biomarker1 + Biomarker2, family = binomial, data = df)
+    grid$Prediction <- predict(model, newdata = grid, type = "response")
+  } else {
+    hidden_structure <- rep(input$nodes, input$layers)
+    model <- suppressWarnings(neuralnet(Disease ~ Biomarker1 + Biomarker2, 
+                                        data = df, 
+                                        hidden = hidden_structure, 
+                                        linear.output = FALSE,
+                                        stepmax = 1e5))
+    pred <- compute(model, grid)
+    grid$Prediction <- pred$net.result[,1]
+  }
+  
+  df$Status <- ifelse(df$Disease == 1, "Sick Patient", "Healthy Patient")
+  
+  ggplot() +
+    geom_raster(data = grid, aes(x = Biomarker1, y = Biomarker2, fill = Prediction), alpha = 0.6) +
+    scale_fill_gradient2(low = "steelblue", mid = "white", high = "darkred", midpoint = 0.5, 
+                         limits = c(0, 1), name = "Predicted Risk") +
+    geom_point(data = df, aes(x = Biomarker1, y = Biomarker2, shape = Status, color = Status), 
+               size = 3, stroke = 1.2) +
+    scale_color_manual(values = c("Healthy Patient" = "blue", "Sick Patient" = "red")) +
+    scale_shape_manual(values = c("Healthy Patient" = 16, "Sick Patient" = 4)) +
+    coord_cartesian(xlim = c(-1.8, 2.5), ylim = c(-1.2, 1.8)) +
+    labs(x = "Biomarker 1", y = "Biomarker 2") +
+    theme(
+      text = element_text(size = 16), 
+      legend.position = "right",
+      legend.direction = "vertical"
+    ) +
+    guides(color = guide_legend(ncol = 1), shape = guide_legend(ncol = 1))
+})
+```

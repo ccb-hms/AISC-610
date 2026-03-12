@@ -1,0 +1,505 @@
+---
+title: "On the p-value"
+subtitle: "AISC 610: Computationally-Enabled Medicine"
+author: "Anthony Christidis"
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 2
+    page-layout: article
+server: shiny
+---
+
+```{r}
+#| context: setup
+#| include: false
+
+# Load necessary libraries for the interactive document
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(bslib)
+
+# Set a clean theme for all plots
+theme_set(theme_minimal(base_size = 14))
+```
+
+## 1. The p-value is "kind of" a probability (not the one most think)
+
+The $p$-value is widely used in medical literature, yet its exact definition is frequently misunderstood. Mathematically, a $p$-value **is** a probability. However, statisticians often caution against simply calling it one, as it is rarely the probability that consumers of clinical research *want* it to be.
+
+When interpreting a $p$-value, the standard intuition is to ask: *"Given the data we observed, what is the probability that this hypothesis is true (or that this finding is a fluke)?"* 
+
+A $p$-value does **not** answer this question. 
+
+Treating it as if it does is a formal statistical error known as the **Inverse Probability Fallacy**:
+$$ P(\text{Data} \mid H_0) \neq P(H_0 \mid \text{Data}) $$
+
+Because a $p$-value does not represent the probability of a medical hypothesis being true, relying on it as a standalone measure of truth can lead to incorrect clinical inferences. To understand why this metric must be interpreted with caution, we must look at its exact mathematical definition.
+
+
+---
+
+## 2. Pop Quiz: So, what exactly IS a p-value?
+
+To understand why I hesitated to call it a simple probability, let's look at what people *think* a $p$-value is, versus what it *actually* is.
+
+**Is the $p$-value...**
+
+*   <strong style="color:red;">NO</strong> — The probability that the Null Hypothesis is true? *(This is the Inverse Probability Fallacy).*
+*   <strong style="color:red;">NO</strong> — The probability that our clinical finding is a fluke? *(Same fallacy, different words).*
+*   <strong style="color:red;">NO</strong> — The probability that we observe a test statistic as extreme or more extreme than our result? *(Missing a crucial condition: Assuming what?!)*
+*   <strong style="color:red;">NO</strong> — If we repeat the experiment an infinite number of times, the probability we'd get a result as extreme or more extreme? *(Still missing the strict assumptions).*
+
+**Is the $p$-value...**
+
+*   <strong style="color:green;">YES</strong> — **IF** the Null Hypothesis is exactly true, **AND IF** all statistical assumptions (perfect independence, no bias, perfect measurement) are met perfectly... we can mathematically or computationally derive a "Null Distribution." **IF** we were to randomly sample from that hypothetical distribution an infinite number of times, the $p$-value is the exact proportion of times we would observe a test statistic as extreme or more extreme than the one we actually calculated.
+
+Notice how exhaustingly restrictive that final, true definition is. It requires a flawless imaginary world. It doesn't tell you if the drug works; it tells you how weird your data looks compared to a perfect mathematical simulation of a useless drug.
+
+---
+
+## 3. Why Top Journals are Changing the Rules
+
+Because the true definition of a $p$-value is so restrictive and unintuitive, its misuse has fueled a massive replication crisis across science and medicine. Historically, researchers have treated $p < 0.05$ as a magical boundary, i.e. a "cliff-edge" where a drug goes from useless to universally effective.
+
+The problem became so severe that top-tier journals have had to intervene. If you submit a manuscript to *JAMA* (Journal of the American Medical Association) today, you must navigate strict statistical guidelines designed to curtail $p$-value abuse:
+
+* **Ban on "Statistically Significant":** *JAMA* heavily discourages authors from using the phrase "statistically significant." They prefer authors to report the data and let it speak for itself.
+* **Focus on Effect Size:** You cannot just say "Drug A was better than Drug B ($p=0.04$)." You must report the absolute difference (e.g., "Patients lived 3 months longer").
+* **Mandatory Confidence Intervals:** Journals now demand 95% Confidence Intervals (CIs). A CI gives a range of plausible values for the clinical effect, which is vastly more informative for patient care than a solitary $p$-value.
+
+To understand *why* journals like *JAMA* are forcing this change, we need to look under the hood of the math. Let's start with a computational simulation of that restrictive "YES" definition above: flipping a coin.
+
+## 4. Visualizing the $p$-value: The Coin Toss
+
+Let's strip away the medical jargon and look at a perfectly fair coin. We are going to flip it 100 times. This represents a clinical trial for a drug that we **know** is completely useless (it works exactly 50% of the time, just like a placebo). 
+
+The Null Hypothesis ($H_0$) is that the drug has absolutely no effect. 
+
+Use the slider below to change the number of "successes" we observe in our trial. Watch what happens to the $p$-value.
+
+```{r}
+#| echo: false
+fluidPage(
+  tabsetPanel(
+    tabPanel("Phase A: The Definition",
+      br(),
+      sidebarLayout(
+        sidebarPanel(
+          sliderInput("obs_heads", "Observed 'Successes' (out of 100 patients):", 
+                      min = 0, max = 100, value = 60, step = 1),
+          hr(),
+          p("Notice that the center of the curve (the Null Hypothesis) never moves. The $p$-value is strictly the probability of landing in the red shaded tails, ASSUMING the center is the absolute truth.")
+        ),
+        mainPanel(
+          h4(textOutput("pval_text"), style="color: darkred; font-weight: bold;"),
+          plotOutput("coin_plot")
+        )
+      )
+    ),
+    tabPanel("Phase B: The Fluke Simulator",
+      br(),
+      sidebarLayout(
+        sidebarPanel(
+          p("Now, let's run 100 identical clinical trials on this EXACT same useless drug."),
+          p("In every single trial, the True Effect is exactly 50%. The drug does nothing."),
+          actionButton("sim_btn", "Run 100 Clinical Trials", class="btn-primary", style="width: 100%;"),
+          hr(),
+          p("Every dot below the red dashed line is a 'statistically significant' result ($p < 0.05$).")
+        ),
+        mainPanel(
+          h4("P-values from 100 Trials of a Useless Drug"),
+          plotOutput("sim_plot")
+        )
+      )
+    )
+  )
+)
+```
+
+### The Illusion of Certainty
+
+If you played with **Phase A**, you physically saw the strict definition of a $p$-value: It is simply the area in the tails of the distribution. It strictly assumes the Null Hypothesis is true. 
+
+If you ran the simulator in **Phase B**, you just witnessed why we cannot blindly trust a $p$-value to tell us if a drug works. Even though the drug was mathematically identical to a placebo, about 5 out of 100 trials resulted in a "statistically significant" finding ($p < 0.05$). 
+
+This is what happens when researchers measure 20 different patient outcomes in a single trial, or when they run multiple subgroups (e.g., "The drug didn't work overall, but look, it worked in men over 65!"). By pure random chance, if you look at enough data, you will find a "significant" $p$-value. The $p$-value is just a measure of statistical surprise, i.e. it doesn't mean your $H_0$ is false, it might just mean you observed a rare fluke.
+
+---
+
+```{r}
+#| context: server
+#| echo: false
+
+# ==========================================
+# SERVER LOGIC FOR APP 1 (COIN TOSS / FLUKES)
+# ==========================================
+
+output$coin_plot <- renderPlot({
+  obs <- input$obs_heads
+  n <- 100
+  p_null <- 0.5
+  
+  # Generate binomial distribution data
+  x <- 0:n
+  y <- dbinom(x, n, p_null)
+  df <- data.frame(x, y)
+  
+  # Calculate two-tailed distance
+  dist_from_mean <- abs(obs - 50)
+  lower_bound <- 50 - dist_from_mean
+  upper_bound <- 50 + dist_from_mean
+  
+  # Shade the tails
+  df$color <- ifelse(df$x <= lower_bound | df$x >= upper_bound, "red", "gray30")
+  
+  ggplot(df, aes(x=x, y=y, fill=color)) +
+    geom_bar(stat="identity", width=1) +
+    scale_fill_identity() +
+    geom_vline(xintercept = obs, linetype="dashed", color="black", linewidth=1) +
+    labs(x = "Number of Successes", y = "Probability under H0",
+         title = "Assuming the Drug is Useless") +
+    theme(text = element_text(size=16))
+})
+
+output$pval_text <- renderText({
+  obs <- input$obs_heads
+  # exact binomial test p-value
+  p_val <- binom.test(obs, 100, 0.5)$p.value
+  paste0("Calculated p-value: ", format.pval(p_val, digits=3, eps=0.001))
+})
+
+observeEvent(input$sim_btn, {
+  output$sim_plot <- renderPlot({
+    # Simulate 100 trials of size 100 with 50% true probability
+    trials <- rbinom(100, 100, 0.5)
+    
+    # Calculate p-value for each trial
+    p_vals <- sapply(trials, function(x) binom.test(x, 100, 0.5)$p.value)
+    
+    df_sim <- data.frame(
+      Trial = 1:100,
+      P_Value = p_vals,
+      Significant = ifelse(p_vals < 0.05, "Yes (False Positive!)", "No")
+    )
+    
+    ggplot(df_sim, aes(x=Trial, y=P_Value, color=Significant)) +
+      geom_point(size=3, alpha=0.8) +
+      scale_color_manual(values = c("No" = "gray50", "Yes (False Positive!)" = "red")) +
+      geom_hline(yintercept = 0.05, linetype="dashed", color="red", linewidth=1) +
+      scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
+      labs(y = "p-value observed in trial", x = "Trial Number") +
+      theme(legend.position = "bottom", text = element_text(size=16))
+  })
+})
+```
+
+## 5. Clinical Reality: Logistic Regression & The Two Traps
+
+Let's move from a coin toss to a simulated clinical trial. Imagine we are testing a new blood biomarker to see if it predicts a specific disease. We analyze the data using Logistic Regression, and the output we care about is the **Odds Ratio (OR)**. 
+
+Behind the scenes, the computer calculates the $p$-value by dividing the estimated effect ($\beta$) by the Standard Error ($SE$). 
+$$ Z = \frac{\hat{\beta}}{SE} $$
+
+Because of this math, the $p$-value is incredibly vulnerable to two traps:
+
+1. **The Sample Size ($N$) Trap:** As $N$ gets massive, the $SE$ approaches zero. This means even a clinically useless drug will produce a "highly significant" $p$-value simply because you had a huge database.
+2. **The Broken Assumption Trap:** The calculation of the standard error ($SE$) strictly assumes every observation is independent. If you violate this assumption, the $p$-value reported by the software is no longer the actual probability of observing a test statistic that extreme under the null. It becomes a mathematically corrupted number.
+
+Use the interactive simulation below to experience both traps.
+
+```{r}
+#| echo: false
+fluidPage(
+  sidebarLayout(
+    sidebarPanel(
+      h4("Trial Parameters"),
+      sliderInput("true_or", "True Clinical Effect (Odds Ratio):", 
+                  min = 1.0, max = 2.5, value = 1.0, step = 0.02),
+      helpText("OR = 1.0 means the biomarker is completely useless."),
+      
+      selectInput("n", "Sample Size (N):", 
+                  choices = c("100" = 100, "500" = 500, "2,000" = 2000, 
+                              "10,000" = 10000, "100,000" = 100000), 
+                  selected = "500"),
+      
+      hr(),
+      h4("Electronic Health Record (EHR) Trap"),
+      checkboxInput("break_assump", "Break the Independence Assumption (Duplicate Patients)", value = FALSE),
+      helpText("Simulates a common EHR error: including 5 hospital visits for the SAME patient as if they were 5 unique patients.")
+    ),
+    
+    mainPanel(
+      h3("Clinical Trial Results"),
+      uiOutput("log_results_ui"),
+      plotOutput("forest_plot", height = "250px"),
+      hr(),
+      h4("Instructions for the 'Aha!' Moments:"),
+      tags$ul(
+        tags$li(strong("The N Trap:"), " Set True Effect to 1.02 (clinically meaningless). Set N to 100,000. Watch the p-value become 'highly significant' even though the drug does almost nothing."),
+        tags$li(strong("The Assumption Trap:"), " Set True Effect to 1.0 (useless). Set N to 500. The $p$-value is NOT significant. Now, click 'Break the Independence Assumption'. Watch the p-value drop to significant levels, even though no new clinical information was added.")
+      )
+    )
+  )
+)
+```
+
+### Why Top Journals Demand Confidence Intervals
+If you followed the instructions above, you just saw exactly why journals like *JAMA* are forcing researchers to report **Effect Sizes and Confidence Intervals (CIs)**. 
+
+When $N$ was 100,000 and the OR was 1.02, the $p$-value shouted $p < 0.001$ ("Success!"). But the Confidence Interval quietly showed the truth: `[1.01 to 1.03]`. A doctor looking at that CI immediately knows the drug is statistically detectable, but clinically useless. The $p$-value hides this reality; the CI exposes it.
+
+---
+
+```{r}
+#| context: server
+#| echo: false
+
+# ==========================================
+# SERVER LOGIC FOR APP 2 (LOGISTIC REGRESSION)
+# ==========================================
+
+# Reactive expression to simulate the clinical trial
+trial_data <- reactive({
+  # Set a seed so the plot doesn't jump wildly, making the CI shrink smoothly
+  set.seed(123) 
+  
+  n_patients <- as.numeric(input$n)
+  true_or <- input$true_or
+  true_beta <- log(true_or)
+  
+  # Simulate continuous biomarker (x)
+  x <- rnorm(n_patients)
+  
+  # Calculate probability of disease
+  # intercept = -2 (baseline prevalence ~12%)
+  logit_p <- -2 + (true_beta * x)
+  p <- 1 / (1 + exp(-logit_p))
+  
+  # Simulate patient outcomes
+  y <- rbinom(n_patients, 1, p)
+  df <- data.frame(patient_id = 1:n_patients, biomarker = x, disease = y)
+  
+  # The Assumption Trap: Duplicate patients to simulate naive EHR clustering
+  if(input$break_assump) {
+    df <- df[rep(seq_len(nrow(df)), each = 5), ]
+  }
+  
+  # Run Logistic Regression
+  model <- glm(disease ~ biomarker, family = binomial, data = df)
+  
+  # Extract results
+  est <- coef(summary(model))["biomarker", "Estimate"]
+  se <- coef(summary(model))["biomarker", "Std. Error"]
+  pval <- coef(summary(model))["biomarker", "Pr(>|z|)"]
+  
+  # Calculate OR and 95% CI
+  obs_or <- exp(est)
+  lci <- exp(est - 1.96 * se)
+  uci <- exp(est + 1.96 * se)
+  
+  list(or = obs_or, lci = lci, uci = uci, pval = pval, 
+       n_actual = n_patients, n_analyzed = nrow(df))
+})
+
+# Render the large text output for p-value and OR
+output$log_results_ui <- renderUI({
+  res <- trial_data()
+  
+  p_color <- ifelse(res$pval < 0.05, "darkgreen", "gray40")
+  p_weight <- ifelse(res$pval < 0.05, "bold", "normal")
+  
+  HTML(paste0(
+    "<div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; border: 1px solid #ddd;'>",
+    "<h4>Observed Odds Ratio: <strong>", round(res$or, 2), "</strong></h4>",
+    "<h5>95% CI: [", round(res$lci, 2), " to ", round(res$uci, 2), "]</h5>",
+    "<h3 style='color: ", p_color, "; font-weight: ", p_weight, ";'>",
+    "p-value: ", format.pval(res$pval, digits=3, eps=0.001), 
+    ifelse(res$pval < 0.05, " (Statistically Significant!)", " (Not Significant)"),
+    "</h3>",
+    "<p style='margin-bottom:0px; color: #666;'><em>Rows of data analyzed: ", format(res$n_analyzed, big.mark=","), "</em></p>",
+    "</div>"
+  ))
+})
+
+# Render the Forest Plot
+output$forest_plot <- renderPlot({
+  res <- trial_data()
+  
+  df_plot <- data.frame(
+    term = "Biomarker Effect",
+    estimate = res$or,
+    conf.low = res$lci,
+    conf.high = res$uci
+  )
+  
+  ggplot(df_plot, aes(x = estimate, y = term)) +
+    geom_vline(xintercept = 1.0, linetype = "dashed", color = "red", linewidth=1) +
+    geom_pointrange(aes(xmin = conf.low, xmax = conf.high), size = 1.5, color = "darkblue") +
+    scale_x_continuous(limits = c(0.5, 3.5)) +
+    labs(x = "Odds Ratio (with 95% CI)", y = "") +
+    theme(text = element_text(size = 16),
+          axis.text.y = element_blank(),
+          axis.ticks.y = element_blank())
+})
+```
+
+## 6. Summary: The "Why to be Wary" Checklist
+
+We have now computationally proven exactly why treating a $p$-value as "the probability that a drug works" is so dangerous. 
+
+As you move forward in your clinical careers and evaluate medical literature, keep this checklist in mind whenever you see a $p$-value:
+
+1.  **A $p$-value does NOT measure clinical importance.** As we saw with the massive sample size ($N=100,000$), a $p$-value can be highly significant ($p < 0.001$) even when the clinical effect is totally meaningless (OR = 1.02). Always look for the absolute effect size.
+2.  **A $p$-value is only accurate if the model's assumptions are perfect.** If the underlying assumptions of the math are violated (e.g., non-independent EHR data, unmeasured confounding), the $p$-value reported by your software is no longer the actual probability of observing your data under the Null. The math breaks down, and the $p$-value becomes invalid.
+3.  **Flukes happen.** If you run enough tests, or look at enough subgroups (men, women, over 65, under 65), you *will* find $p < 0.05$ purely by random chance. 
+4.  **A $p$-value is not the probability of the Null Hypothesis being true.** It strictly assumes the Null Hypothesis *is* true, and measures how weird your data is under that assumption.
+
+---
+
+## 7. The Final Limit: Association vs. Causation
+
+In the field of computationally-enabled medicine, machine learning algorithms and high-throughput models can rapidly scan massive Electronic Health Record (EHR) databases, calculating thousands of $p$-values in seconds. 
+
+Because of this sheer scale, it is exceptionally easy for algorithms to find "highly statistically significant" associations. The math in these scenarios is not wrong, i.e. the statistical coupling is real. However, algorithms do not inherently understand confounding variables, human behavior, or clinical context.
+
+Use the simulation below to experience **Confounding by Indication**, a classic medical data trap. An algorithm has scanned an EHR database of 2,000 patients comparing **Standard Care** vs. a **New Drug**. 
+
+Look at the naive analysis first, then adjust for the patients' Baseline Severity.
+
+```{r}
+#| echo: false
+fluidPage(
+  sidebarLayout(
+    sidebarPanel(
+      h4("EHR Algorithm View"),
+      radioButtons("drug_analysis", "Analysis Type:",
+                   choices = c("Naive (Unadjusted)" = "naive",
+                               "Adjust for Baseline Severity" = "adjusted")),
+      hr(),
+      h5("What is happening?"),
+      p("Doctors naturally prescribe the New Drug to the SICKEST patients. Because those patients are already at a high risk of dying, a naive algorithm thinks the New Drug is killing them.")
+    ),
+    
+    mainPanel(
+      h4("Mortality Rate by Treatment"),
+      plotOutput("drug_plot", height = "300px"),
+      uiOutput("drug_text")
+    )
+  )
+)
+```
+
+### Moving Beyond the $p$-value
+In the naive simulation above, the $p$-value strongly suggested the New Drug was dangerous ($$p < 0.001$$). A blind algorithmic interpretation would lead to pulling the drug from the market. However, once the confounding variable (baseline severity) was accounted for, the $p$-value flipped, revealing that the New Drug actually *saves* lives.
+
+A $p$-value simply indicates whether two variables are statistically associated under a specific set of mathematical assumptions; it contains absolutely no information about causation. 
+
+Because observational EHR data is heavily confounded by clinical decisions, modern medical literature rarely relies on simple $p$-values to prove a point. Instead, researchers use advanced methodologies to isolate true causal effects from observational data. As you read the literature, you will frequently encounter:
+
+*   **Causal Inference & Target Trial Emulation:** Designing an observational data analysis to mimic the strict rules and time-zero baseline of a randomized controlled trial.
+*   **Propensity Score Matching:** An algorithm calculates the probability (propensity) that a patient would receive a treatment based on their baseline characteristics, and matches them to an untreated patient with the exact same score to artificially balance confounders.
+*   **Mendelian Randomization (MR):** Using measured variation in genes of known function to examine the causal effect of a modifiable exposure on disease. Because genes are randomly assigned at conception, MR acts as "nature's randomized trial," immune to standard environmental confounders.
+
+Ultimately, a $p$-value is a measure of statistical surprise, not a measure of biological truth. In clinical data science, algorithmic outputs and statistical metrics cannot serve as standalone proof of a mechanism; they must always be contextualized against biological and clinical reality.
+
+```{r}
+#| context: server
+#| echo: false
+
+# ==========================================
+# SERVER LOGIC FOR APP 3 (DRUG CONFOUNDING)
+# ==========================================
+drug_data <- reactive({
+  set.seed(8675309)
+  n <- 2000
+  
+  # Confounder: Baseline Severity Score (1 to 10)
+  severity <- sample(1:10, n, replace = TRUE)
+  
+  # Treatment assignment: Sicker patients get the New Drug
+  logit_trt <- -3 + 0.6 * severity
+  prob_trt <- 1 / (1 + exp(-logit_trt))
+  treatment <- rbinom(n, 1, prob_trt)
+  
+  # Outcome: Mortality (1 = Died, 0 = Survived)
+  # Severity heavily increases mortality. 
+  # New Drug actually REDUCES mortality (negative beta)
+  logit_mort <- -4 + 0.8 * severity - 1.2 * treatment
+  prob_mort <- 1 / (1 + exp(-logit_mort))
+  mortality <- rbinom(n, 1, prob_mort)
+  
+  data.frame(
+    Severity = severity,
+    Treatment = factor(treatment, levels = c(0, 1), labels = c("Standard Care", "New Drug")),
+    Mortality = mortality
+  )
+})
+
+output$drug_plot <- renderPlot({
+  df <- drug_data()
+  
+  if (input$drug_analysis == "naive") {
+    # Calculate crude mortality rates
+    summary_df <- df %>%
+      group_by(Treatment) %>%
+      summarize(Mortality_Rate = mean(Mortality))
+    
+    ggplot(summary_df, aes(x = Treatment, y = Mortality_Rate, fill = Treatment)) +
+      geom_bar(stat = "identity", width = 0.5) +
+      scale_fill_manual(values = c("Standard Care" = "steelblue", "New Drug" = "darkred")) +
+      scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, max(summary_df$Mortality_Rate) + 0.1)) +
+      labs(y = "Crude Mortality Rate", x = "") +
+      theme(text = element_text(size = 16), legend.position = "none")
+      
+  } else {
+    # Show mortality across severity levels
+    summary_df <- df %>%
+      group_by(Severity, Treatment) %>%
+      summarize(Mortality_Rate = mean(Mortality), .groups = 'drop')
+    
+    ggplot(summary_df, aes(x = factor(Severity), y = Mortality_Rate, color = Treatment, group = Treatment)) +
+      geom_line(size = 1.5) +
+      geom_point(size = 3) +
+      scale_color_manual(values = c("Standard Care" = "steelblue", "New Drug" = "darkgreen")) +
+      scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+      labs(x = "Baseline Disease Severity (1=Mild, 10=Severe)", y = "Mortality Rate") +
+      theme(text = element_text(size = 14), legend.position = "top")
+  }
+})
+
+output$drug_text <- renderUI({
+  df <- drug_data()
+  
+  if (input$drug_analysis == "naive") {
+    model <- glm(Mortality ~ Treatment, family = binomial, data = df)
+    pval <- coef(summary(model))["TreatmentNew Drug", "Pr(>|z|)"]
+    or <- exp(coef(summary(model))["TreatmentNew Drug", "Estimate"])
+    
+    HTML(paste0(
+      "<div style='background-color: #fee; padding: 10px; border-radius: 5px; margin-top: 15px;'>",
+      "<h4 style='color: darkred; margin-top: 0;'>Naive Algorithm Output</h4>",
+      "<strong>Result:</strong> New Drug increases mortality risk by ", round(or, 1), "x<br>",
+      "<strong>p-value: </strong>", format.pval(pval, digits = 3, eps = 0.001), " (Highly Significant!)<br>",
+      "<em>Conclusion: Pull the drug from the market immediately!</em>",
+      "</div>"
+    ))
+  } else {
+    model <- glm(Mortality ~ Treatment + Severity, family = binomial, data = df)
+    pval <- coef(summary(model))["TreatmentNew Drug", "Pr(>|z|)"]
+    or <- exp(coef(summary(model))["TreatmentNew Drug", "Estimate"])
+    
+    HTML(paste0(
+      "<div style='background-color: #efe; padding: 10px; border-radius: 5px; margin-top: 15px;'>",
+      "<h4 style='color: darkgreen; margin-top: 0;'>Adjusted Algorithm Output</h4>",
+      "<strong>Result:</strong> New Drug DECREASES mortality risk (OR = ", round(or, 2), ")<br>",
+      "<strong>p-value: </strong>", format.pval(pval, digits = 3, eps = 0.001), " (Highly Significant!)<br>",
+      "<em>Conclusion: The drug works. Sicker patients were just skewing the naive data.</em>",
+      "</div>"
+    ))
+  }
+})
+```
