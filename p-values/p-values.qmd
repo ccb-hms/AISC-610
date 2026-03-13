@@ -92,7 +92,7 @@ fluidPage(
           sliderInput("obs_heads", "Observed 'Successes' (out of 100 patients):", 
                       min = 0, max = 100, value = 60, step = 1),
           hr(),
-          p("Notice that the center of the curve (the Null Hypothesis) never moves. The $p$-value is strictly the probability of landing in the red shaded tails, ASSUMING the center is the absolute truth.")
+          p("Notice that the center of the curve (the Null Hypothesis) never moves. The p-value is strictly the probability of landing in the red shaded tails, ASSUMING the center is the absolute truth.")
         ),
         mainPanel(
           h4(textOutput("pval_text"), style="color: darkred; font-weight: bold;"),
