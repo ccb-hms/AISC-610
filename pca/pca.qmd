@@ -1,0 +1,531 @@
+---
+title: "Principal Component Analysis (PCA)"
+subtitle: "AISC 610: Computationally Enabled Medicine"
+author: "Anthony Christidis"
+format: 
+  revealjs:
+    theme: default
+    slide-number: true
+    transition: fade
+    scrollable: true
+    smaller: true
+    width: 1600
+    height: 900
+    margin: 0.05
+server: shiny
+---
+
+```{r}
+#| context: setup
+#| include: false
+library(ggplot2)
+library(dplyr)
+
+# 1. Toy data for Intuition App (Slide 4)
+set.seed(42)
+x_toy <- rnorm(100, mean = 50, sd = 10)
+y_toy <- 0.8 * x_toy + rnorm(100, mean = 0, sd = 8)
+toy_data <- data.frame(x = scale(x_toy), y = scale(y_toy))
+
+# 2. Digits Data for Reconstruction App (Slide 7)
+mnist_data <- readRDS("mnist_prepared.rds")
+digits_X <- mnist_data$X
+digits_y <- mnist_data$y
+
+# Train PCA on ALL 2,000 digits
+pca_digits <- prcomp(digits_X, center = TRUE, scale. = FALSE)
+
+# Pick one example of each number (0-9) to reconstruct later
+example_indices <- sapply(0:9, function(num) which(digits_y == num)[1])
+
+# 3. Load MERFISH data for Spatial App (Slide 8, 9, 10, 11)
+merfish_data <- readRDS("merfish_prepared.rds")
+full_tissue <- merfish_data$tissue
+fibro_loadings <- merfish_data$loadings
+```
+
+## 1. The Curse of Dimensionality
+
+Modern medicine is driven by a deluge of high-dimensional data:
+
+- **EHR:** Thousands of billing codes and lab values per patient.
+- **Genomics:** 20,000+ genes expressed in a single biopsy.
+- **Radiomics:** Millions of pixels in an MRI.
+
+**The Problem:** 
+Humans can only visualize data in 2D or 3D. How do we look at a single cell in *20,000-dimensional* space without missing the forest for the trees? 
+
+---
+
+## 2. The Matrix Intuition
+
+All of this data lives in a **Matrix**.
+
+*   **Each Row** is an observation *(e.g., a Cell, or a Patient).*
+*   **Each Column** is a feature *(e.g., a Gene, or a Protein).*
+
+| | Gene A | Gene B | Gene C | ... | Gene 20,000 |
+|---|---|---|---|---|---|
+| **Cell 1** | 12 | 0 | 45 | ... | 5 |
+| **Cell 2** | 2 | 10 | 3 | ... | 90 |
+
+<br>
+If we only had 2 genes, we could simply plot Gene A vs. Gene B on an X-Y graph. 
+But we have 20,000 dimensions. 
+
+---
+
+## 3. What does PCA actually do?
+
+Imagine all your cells are points floating in a 20,000-dimensional cloud. 
+**PCA defines new axes right through the middle of that cloud.**
+
+Instead of X and Y, we create **PC1** and **PC2**. 
+How does the algorithm choose where to point these new axes?
+
+*   **The Rule:** PCA finds the angle where the points are the **most spread out** from each other. 
+*   In statistics, "spread out" = **Variance**.
+*   Maximum variance means we capture the most *biological differences* between our cells.
+
+---
+
+## 4. Interactive: Finding the Principal Component
+
+*Drag the slider to rotate the blue axis. Watch the red dots (the projections). PCA mathematically locks onto the angle that maximizes the variance (the spread) of those red dots!*
+
+```{r}
+#| echo: false
+fluidRow(
+  column(7, 
+         sliderInput("angle", "Choose axis angle (Degrees):", min = 0, max = 180, value = 0, step = 5, width="100%", animate=animationOptions(interval=400)),
+         plotOutput("pca_slider_plot", height = "500px")
+  ),
+  column(5, 
+         br(), br(),
+         plotOutput("variance_bar", height = "500px")
+  )
+)
+```
+
+---
+
+## 5. The Anatomy of PCA: Scores and Loadings
+
+When we run PCA, the math literally splits our original data matrix into two new matrices multiplied together:
+
+<div style="font-size: 1.1em; text-align: center; margin-top: 30px; margin-bottom: 30px;">
+$$
+\begin{array}{ccccc}
+\textbf{Original Data} & & \textbf{Scores} & & \textbf{Loadings} \\
+\begin{bmatrix} 
+\cdot & \dots & \cdot \\ 
+\vdots & \ddots & \vdots \\ 
+\cdot & \dots & \cdot 
+\end{bmatrix} 
+& \approx &
+\begin{bmatrix} 
+\cdot & \dots & \cdot \\ 
+\vdots & \ddots & \vdots \\ 
+\cdot & \dots & \cdot 
+\end{bmatrix}
+& \times &
+\begin{bmatrix} 
+\cdot & \dots & \cdot \\ 
+\vdots & \ddots & \vdots \\ 
+\cdot & \dots & \cdot 
+\end{bmatrix} \\
+\underbrace{\hspace{3.5cm}}_{\textbf{Rows:} \text{ Cells} \\ \textbf{Cols:} \text{ Genes}} & &
+\underbrace{\hspace{3.5cm}}_{\textbf{Rows:} \text{ Cells} \\ \textbf{Cols:} \textbf{ PCs}} & &
+\underbrace{\hspace{3.5cm}}_{\textbf{Rows:} \textbf{ PCs} \\ \textbf{Cols:} \text{ Genes}}
+\end{array}
+$$
+</div>
+
+*   **The Scores (The Coordinates):** Where does Cell 1 sit on the new PC axes? *(e.g., Row 1 shows Cell 1 has a high PC1 score).*
+*   **The Loadings (The Recipe):** What genes make up this new axis? *(e.g., Row 1 shows PC1 is mostly made of Gene A and Gene C).* 
+
+---
+
+## 6. Matrix Reconstruction (Signal vs. Noise)
+
+Because the PCs are just recipes of our original data, we can multiply the Scores and Loadings backwards to rebuild our matrix layer by layer. 
+
+Think of your data like a complex symphony:
+
+*   **PC1** captures the loudest signal (e.g., the drums). 
+*   **PC2** captures the next loudest signal (e.g., the violins).
+*   The **last PCs** only capture random background noise (e.g., someone coughing).
+
+If we drop the noisy PCs, we achieve **Data Compression**. We save computational space but keep the true underlying biological pattern.
+
+---
+
+## 7. Interactive: Matrix Reconstruction & Error
+
+*If we use ALL the PCs, the reconstruction is perfect. But what if we only use a few PCs in our Loadings matrix? Watch the **Error Matrix** shrink and the **Explained Variance** rise as we add PCs.*
+
+```{r}
+#| echo: false
+fluidRow(
+  column(3, 
+         selectInput("digit_choice", "Choose Example Matrix:", choices = 0:9, selected = 3),
+         sliderInput("k_pcs", "Number of PCs used (k):", min = 1, max = 150, value = 1, step = 1, animate = animationOptions(interval = 200)),
+         br(),
+         p(strong("Signal vs. Noise:")),
+         p("The first few PCs capture the signal (the shape). The later PCs only capture the noise (the static).")
+  ),
+  column(9, plotOutput("matrix_recon_plot", height = "500px"))
+)
+```
+
+---
+
+## 8. Real-World Application: MERFISH 
+
+Let's look at a **Spatial Transcriptomics** dataset (Cadinu et al. 2024). 
+Researchers mapped the RNA of single cells in the mouse colon during an Inflammatory Bowel Disease (IBD) model.
+
+**The Tissue Context:** Below is the physical cross-section of the gut, showing the major cell lineages.
+
+```{r}
+#| echo: false
+#| fig-width: 10
+#| fig-height: 4.5
+ggplot(full_tissue, aes(x = x, y = y, color = tier1)) +
+  geom_point(size = 0.5, alpha = 0.8) +
+  facet_wrap(~condition) +
+  scale_color_brewer(palette = "Set1") +
+  theme_void() +
+  labs(color = "Cell Type") +
+  theme(legend.position = "bottom", strip.text = element_text(size=14, face="bold"))
+```
+
+---
+
+## 9. The Gene Expression Problem
+
+We want to zoom in on **Fibroblasts** (the structural cells) to see how they react to inflammation. 
+We *could* just color our spatial map by individual genes...
+
+*Choose a gene. Darker blue = higher expression (logcounts).*
+
+```{r}
+#| echo: false
+fluidRow(
+  column(3, 
+         selectInput("single_gene", "Select a Gene:", 
+                     choices = c("Col1a2 (Collagen/Matrix)" = "Col1a2", 
+                                 "Sparc (Tissue Remodeling)" = "Sparc", 
+                                 "Fbn1 (Fibrillin)" = "Fbn1",
+                                 "C3 (Complement/Immune)" = "C3",
+                                 "Adamdec1 (Inflammation)" = "Adamdec1")),
+         br(),
+         p("Looking at genes one-by-one is exhausting (there are hundreds!)."),
+         p("How do we summarize the overall state of the cell?")
+  ),
+  column(9, plotOutput("single_gene_app", height = "500px"))
+)
+```
+
+---
+
+## 10. Interactive: Dimension Reduction in Space
+
+**The PCA Solution:** We combine Healthy and Inflamed fibroblasts into one matrix and run PCA. PCA mathematically compresses those hundreds of genes into a "Summary Score" (PC1).
+
+*Color by Disease State, and then color by PC1. Notice how PC1 perfectly maps the inflammation gradient without ever knowing the labels!*
+
+```{r}
+#| echo: false
+fluidRow(
+  column(3, 
+         selectInput("color_var", "Color Fibroblasts By:", 
+                     choices = c("Disease State" = "condition", 
+                                 "PC1 Score (Primary Axis)" = "PC1",
+                                 "PC2 Score (Secondary Axis)" = "PC2")),
+         br(),
+         p(strong("What are we looking at?")),
+         p("Left: The physical (x, y) map of the colon slice."),
+         p("Right: The mathematical PCA space.")
+  ),
+  column(5, plotOutput("merfish_spatial_app", height = "500px")),
+  column(4, plotOutput("merfish_pca_app", height = "500px"))
+)
+```
+
+---
+
+## 11. What is driving the PCs? (The Loadings)
+
+We saw that PC1 separates the Healthy and Inflamed cells. But **why**?
+
+By looking at the **Loadings**, we can see exactly which genes the PCA algorithm mathematically grouped together to build that axis.
+
+```{r}
+#| echo: false
+fluidRow(
+  column(4, 
+         selectInput("pc_choice", "Select Principal Component:", 
+                     choices = c("PC1" = "PC1", "PC2" = "PC2")),
+         br(),
+         p("These are the top genes with the highest weights (loadings) for the selected PC."),
+         p("If PC1 separates the inflamed cells, we should expect to see classic inflammation markers here!")
+  ),
+  column(8, plotOutput("loadings_app", height = "500px"))
+)
+```
+
+---
+
+## 12. PCA as a Pre-Processing Step
+
+PCA is rarely the *final* step of an analysis. It is usually **Step 1**. 
+
+In a previous lecture, you learned about **Clustering** (e.g., K-Means) to find distinct patient subtypes or cell types. 
+
+**Why don't we just cluster the raw genes?**
+Because of the *Curse of Dimensionality*. In 20,000-dimensional space, the concept of "distance" breaks down (everything looks equally far apart), and algorithms run incredibly slowly.
+
+**The Solution:** We run PCA first to compress the data into dense, meaningful biological signals (the top 10-50 PCs), and *then* we run our clustering algorithm on the PCA Scores!
+
+---
+
+## 13. Interactive: Clustering in PCA Space
+
+*Let's run a **K-Means clustering** algorithm directly on our Fibroblast PCA scores. Choose the number of clusters ($k$).* 
+
+*Notice how clustering draws distinct boundaries in the PCA space (Right), which translates to distinct spatial regions in the physical tissue (Left)!*
+
+```{r}
+#| echo: false
+fluidRow(
+  column(3, 
+         sliderInput("k_clusters", "Number of Clusters (k):", 
+                     min = 2, max = 6, value = 3, step = 1),
+         br(),
+         p("PCA creates the continuous map. Clustering draws the borders.")
+  ),
+  column(5, plotOutput("cluster_spatial_app", height = "500px")),
+  column(4, plotOutput("cluster_pca_app", height = "500px"))
+)
+```
+
+---
+
+## 14. Best Practices
+
+**1. Data must be scaled!**
+If Gene A's expression is measured in thousands, and Gene B's is measured in decimals, PCA will just choose Gene A. Always center and scale your data before PCA.
+
+**2. Always report Explained Variance**
+A PCA plot without the % variance explained on the axes is meaningless. Is PC1 capturing 80% of the biological story, or only 5%?
+
+**3. Never skip PCs without a good reason**
+Plotting PC1 vs PC3 (and skipping PC2) is suspicious. PCs are ranked in order of importance. 
+
+**4. PCA is Unsupervised**
+PCA does not know the "Healthy" vs "Inflamed" labels. If your disease states separate beautifully in PCA space, it means the strongest biological signal in the data is driven by the disease. 
+
+```{r}
+#| context: server
+
+# ==========================================
+# APP 1: Intuition Plot (Slide 4)
+# ==========================================
+output$pca_slider_plot <- renderPlot({
+  ang <- input$angle * (pi/180)
+  v <- c(cos(ang), sin(ang))
+  projections <- t(apply(toy_data, 1, function(pt) { (sum(pt * v)) * v }))
+  proj_df <- data.frame(x_proj = projections[,1], y_proj = projections[,2])
+  
+  ggplot() +
+    geom_point(data = toy_data, aes(x, y), color = "black", size = 5, alpha = 0.4) +
+    geom_abline(slope = tan(ang), intercept = 0, color = "dodgerblue", linewidth = 2.5) +
+    geom_point(data = proj_df, aes(x_proj, y_proj), color = "red", size = 6) +
+    geom_segment(data = cbind(toy_data, proj_df), 
+                 aes(x = x, y = y, xend = x_proj, yend = y_proj), 
+                 linetype = "dashed", color = "red", alpha = 0.3, linewidth=1.5) +
+    coord_fixed(xlim = c(-3, 3), ylim = c(-3, 3)) +
+    theme_minimal(base_size = 24) +
+    theme(plot.title = element_text(face="bold"))
+})
+
+output$variance_bar <- renderPlot({
+  ang <- input$angle * (pi/180)
+  v <- c(cos(ang), sin(ang))
+  projections <- t(apply(toy_data, 1, function(pt) { (sum(pt * v)) * v }))
+  proj_df <- data.frame(x_proj = projections[,1], y_proj = projections[,2])
+  variance <- var(sqrt(proj_df$x_proj^2 + proj_df$y_proj^2))
+  
+  ggplot(data.frame(x = "Variance of Red Points", val = variance), aes(x, val)) +
+    geom_col(fill = "red", width = 0.5) +
+    scale_y_continuous(limits = c(0, 1.7)) +
+    theme_minimal(base_size = 24) +
+    ggtitle(paste("Variance =", round(variance, 2))) +
+    theme(plot.title = element_text(size = 36, face="bold", color="red"),
+          axis.title = element_blank(),
+          axis.text.y = element_blank(),
+          axis.ticks.y = element_blank())
+})
+
+# ==========================================
+# APP 2: Matrix Reconstruction & Error (Slide 7)
+# ==========================================
+output$matrix_recon_plot <- renderPlot({
+  k <- input$k_pcs
+  digit <- as.numeric(input$digit_choice)
+  idx <- example_indices[digit + 1]
+  orig_img <- matrix(digits_X[idx, ], nrow=28, ncol=28, byrow=TRUE)
+  
+  scores_k <- pca_digits$x[idx, 1:k, drop=FALSE]
+  loadings_k <- t(pca_digits$rotation[, 1:k, drop=FALSE])
+  
+  recon_flat <- (scores_k %*% loadings_k) + pca_digits$center
+  recon_img <- matrix(recon_flat, nrow=28, ncol=28, byrow=TRUE)
+  error_img <- orig_img - recon_img
+  
+  var_explained <- sum(pca_digits$sdev[1:k]^2) / sum(pca_digits$sdev^2) * 100
+  reconstruction_error <- sum(error_img^2) 
+  
+  par(mfrow = c(1, 3), mar = c(1, 1, 8, 1), oma = c(0,0,5,0))
+  
+  image(t(orig_img)[,28:1], col = gray.colors(256, rev=TRUE), axes=FALSE,
+        main = "Original Matrix\n(Full Data)", cex.main = 2.5)
+  
+  image(t(recon_img)[,28:1], col = gray.colors(256, rev=TRUE), axes=FALSE,
+        main = paste0("Reconstructed\n(using ", k, " PCs)"), cex.main = 2.5)
+  
+  err_max <- max(abs(error_img))
+  image(t(abs(error_img))[,28:1], col = colorRampPalette(c("white", "firebrick"))(100), 
+        axes=FALSE, zlim = c(0, max(0.1, err_max)),
+        main = "Error Matrix\n(Original - Recon)", cex.main = 2.5)
+  
+  title(main = sprintf("Explained Variance: %.1f%%   |   Total Error: %.1f", 
+                       var_explained, reconstruction_error), 
+        outer = TRUE, cex.main = 3.5, col.main = "dodgerblue4", font.main=2)
+})
+
+# ==========================================
+# APP 3: Single Gene Expression (Slide 9)
+# ==========================================
+output$single_gene_app <- renderPlot({
+  target_data <- full_tissue[full_tissue$tier1 == "Fibroblast", ]
+  
+  ggplot() +
+    geom_point(data = full_tissue, aes(x = x, y = y), color = "grey90", size = 1) +
+    geom_point(data = target_data, aes_string(x = "x", y = "y", color = input$single_gene), size = 2.5, alpha = 0.9) +
+    facet_wrap(~condition) +
+    theme_void(base_size = 24) +
+    scale_color_gradient(low = "lightgrey", high = "navyblue", name = "Expression") +
+    ggtitle(paste("Spatial Expression of", input$single_gene)) +
+    theme(legend.position = "right", 
+          strip.text = element_text(size=26, face="bold"), 
+          plot.title = element_text(size=28, face="bold", hjust=0.5))
+})
+
+# ==========================================
+# APP 4: MERFISH Spatial Application (Slide 10)
+# ==========================================
+output$merfish_spatial_app <- renderPlot({
+  target_data <- full_tissue[full_tissue$tier1 == "Fibroblast", ]
+  
+  p <- ggplot() +
+    geom_point(data = full_tissue, aes(x = x, y = y), color = "grey90", size = 1) +
+    geom_point(data = target_data, aes_string(x = "x", y = "y", color = input$color_var), size = 2.5, alpha = 0.9) +
+    facet_wrap(~condition) +
+    theme_void(base_size = 20) +
+    ggtitle("Physical Tissue Space") +
+    theme(legend.position = "bottom", 
+          strip.text = element_text(size=22, face="bold"),
+          plot.title = element_text(size=24, face="bold"))
+  
+  if(input$color_var %in% c("PC1", "PC2")){
+    p <- p + scale_color_viridis_c(option = "magma", name = input$color_var)
+  } else if (input$color_var == "condition") {
+    p <- p + scale_color_manual(values = c("Healthy" = "#377EB8", "DSS9" = "#E41A1C"), name = "State")
+  }
+  p
+})
+
+output$merfish_pca_app <- renderPlot({
+  target_data <- full_tissue[full_tissue$tier1 == "Fibroblast", ]
+  
+  p <- ggplot(target_data, aes_string(x = "PC1", y = "PC2", color = input$color_var)) +
+    geom_point(size = 2.5, alpha = 0.7) +
+    theme_bw(base_size = 20) +
+    ggtitle("PCA Space (Fibroblasts)") +
+    theme(legend.position = "bottom",
+          plot.title = element_text(size=24, face="bold"),
+          axis.title = element_text(size=20))
+  
+  if(input$color_var %in% c("PC1", "PC2")){
+    p <- p + scale_color_viridis_c(option = "magma", name = input$color_var)
+  } else if (input$color_var == "condition") {
+    p <- p + scale_color_manual(values = c("Healthy" = "#377EB8", "DSS9" = "#E41A1C"), name = "State")
+  }
+  p
+})
+
+# ==========================================
+# APP 5: Loadings Bar Chart (Slide 11)
+# ==========================================
+output$loadings_app <- renderPlot({
+  selected_pc <- input$pc_choice
+  
+  top_genes <- fibro_loadings %>%
+    mutate(abs_weight = abs(!!sym(selected_pc))) %>%
+    arrange(desc(abs_weight)) %>%
+    head(10)
+  
+  ggplot(top_genes, aes(x = reorder(Gene, !!sym(selected_pc)), y = !!sym(selected_pc), fill = !!sym(selected_pc) > 0)) +
+    geom_col() +
+    coord_flip() +
+    theme_minimal(base_size = 24) +
+    scale_fill_manual(values = c("TRUE" = "dodgerblue4", "FALSE" = "firebrick"), guide = "none") +
+    labs(x = "Gene", y = paste(selected_pc, "Loading Weight"), 
+         title = paste("Top 10 Genes Driving", selected_pc)) +
+    theme(plot.title = element_text(size=28, face="bold"),
+          axis.text = element_text(size=20),
+          axis.title = element_text(size=22, face="bold"))
+})
+
+# ==========================================
+# APP 6: K-Means Clustering on PCs (Slide 13)
+# ==========================================
+clustering_data <- reactive({
+  fibro_data <- full_tissue[full_tissue$tier1 == "Fibroblast", ]
+  fibro_data <- fibro_data[!is.na(fibro_data$PC1) & !is.na(fibro_data$PC2), ]
+  set.seed(123) 
+  km <- kmeans(fibro_data[, c("PC1", "PC2")], centers = input$k_clusters, nstart = 10)
+  fibro_data$Cluster <- as.factor(km$cluster)
+  return(fibro_data)
+})
+
+output$cluster_spatial_app <- renderPlot({
+  clustered_fibros <- clustering_data()
+  
+  ggplot() +
+    geom_point(data = full_tissue, aes(x = x, y = y), color = "grey90", size = 1) +
+    geom_point(data = clustered_fibros, aes(x = x, y = y, color = Cluster), size = 2.5, alpha = 0.9) +
+    facet_wrap(~condition) +
+    theme_void(base_size = 20) +
+    scale_color_brewer(palette = "Dark2") +
+    ggtitle("Physical Tissue Space") +
+    theme(legend.position = "bottom", 
+          strip.text = element_text(size=22, face="bold"),
+          plot.title = element_text(size=24, face="bold"))
+})
+
+output$cluster_pca_app <- renderPlot({
+  clustered_fibros <- clustering_data()
+  
+  ggplot(clustered_fibros, aes(x = PC1, y = PC2, color = Cluster)) +
+    geom_point(size = 2.5, alpha = 0.7) +
+    theme_bw(base_size = 20) +
+    scale_color_brewer(palette = "Dark2") +
+    ggtitle("PCA Space (Clustered)") +
+    theme(legend.position = "bottom",
+          plot.title = element_text(size=24, face="bold"),
+          axis.title = element_text(size=20))
+})
+```
