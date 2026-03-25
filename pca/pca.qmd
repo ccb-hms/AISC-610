@@ -152,9 +152,9 @@ Because the PCs are just recipes of our original data, we can multiply the Score
 
 Think of your data like a complex symphony:
 
-*   **PC1** captures the loudest signal (e.g., the drums). 
-*   **PC2** captures the next loudest signal (e.g., the violins).
-*   The **last PCs** only capture random background noise (e.g., someone coughing).
+*   **PC1** captures the loudest signal. 
+*   **PC2** captures the next loudest signal.
+*   The **last PCs** only capture random background noise.
 
 If we drop the noisy PCs, we achieve **Data Compression**. We save computational space but keep the true underlying biological pattern.
 
